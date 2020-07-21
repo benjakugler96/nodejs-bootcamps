@@ -1,8 +1,10 @@
+const crypto = require('crypto');
 const path = require('path');
-const User = require('../models/User');
+
 const asyncHandler = require('../middleware/async');
 const ErrorResponse = require('../utils/errorResponse');
 const sendEmail = require('../utils/sendEmail');
+const User = require('../models/User');
 
 /**
  * @description Register user
@@ -50,12 +52,30 @@ exports.login = asyncHandler(async (req, res, next) => {
 });
 
 /**
+ * @description Log user out / clear clookie
+ * @route GET /api/v1/auth/logout
+ * @access Private
+ */
+exports.logout = asyncHandler(async (req, res, next) => {
+	res.cookie('token', 'none', {
+		expires: new Date(Date.now() + 10 * 1000),
+		httpOnly: true,
+	});
+
+	res.status(200).json({
+		success: true,
+		data: {},
+	});
+});
+
+/**
  * @description Get loged in user
  * @route GET /api/v1/auth/me
  * @access Private
  */
 exports.getMe = asyncHandler(async (req, res, next) => {
 	const user = await User.findById(req.user.id);
+	console.log(req.user);
 
 	res.status(200).json({
 		success: true,
@@ -81,7 +101,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 	// Reset URL
 	const resetUrl = `${req.protocol}://${req.get(
 		'host'
-	)}/api/v1/resetpassword/${resetToken}`;
+	)}/api/v1/auth/resetpassword/${resetToken}`;
 
 	// Message
 	const message = `You are receiving this email because you requested a password reset.
@@ -111,6 +131,36 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 			new ErrorResponse('There was a problem while sending the email', 500)
 		);
 	}
+});
+
+/**
+ * @description Reset Password
+ * @route GET /api/v1/auth/resetpassword/:resetToken
+ * @access Public
+ */
+exports.resetPassword = asyncHandler(async (req, res, next) => {
+	// Get hashed token
+	const resetPasswordToken = crypto
+		.createHash('sha256')
+		.update(req.params.resetToken)
+		.digest('hex');
+
+	// Find user by reset token
+	const user = await User.findOne({
+		resetPasswordToken,
+		resetPasswordExpire: { $gt: Date.now() },
+	});
+
+	if (!user) {
+		return next(new ErrorResponse('Invalid token', 400));
+	}
+
+	user.password = req.body.password;
+	user.resetPasswordToken = undefined;
+	user.resetPasswordExpire = undefined;
+	await user.save();
+
+	sendTokenResponse(user, 200, res);
 });
 
 // Get token from model, set to cookie and send the response

@@ -1,8 +1,14 @@
 const express = require('express');
-const morgan = require('morgan');
-const fileUpload = require('express-fileupload');
 const cookieParser = require('cookie-parser');
+const cors = require('cors');
+const fileUpload = require('express-fileupload');
+const helmet = require('helmet');
+const hpp = require('hpp');
+const mongoSanitize = require('express-mongo-sanitize');
+const morgan = require('morgan');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
+const xss = require('xss-clean');
 
 const connectDb = require('./config/db');
 
@@ -22,6 +28,18 @@ app.use(fileUpload());
 
 // To get acces to req.cookie
 app.use(cookieParser());
+
+// Security middlewares
+app.use(cors());
+app.use(helmet()); // Headers security
+app.use(hpp());
+app.use(mongoSanitize()); // Prevent user: {"gt": ""}
+app.use(xss()); // Prevents xss attack (insert <srcipt></srcipt>) when creating data
+const limiter = rateLimit({
+	windowMs: 10 * 60 * 1000, // 10 minutes
+	max: 100,
+});
+app.use(limiter);
 
 // Static folder
 app.use(express.static(path.join(__dirname, 'public')));
